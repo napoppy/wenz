@@ -20,7 +20,8 @@
 |------|----------|------|
 | 前端 | Streamlit | 轻量化 Web 应用框架 |
 | 后端 | Python 3.9+ | 核心业务逻辑 |
-| 数据爬取 | requests + BeautifulSoup4 | 搜狗微信搜索数据爬取 |
+| 浏览器控制 | Playwright | 有头浏览器控制（禁用 headless） |
+| 字体解析 | fontTools | 微信 woff 字体反爬破解 |
 | 反爬虫 | 自研 AntiCrawler 模块 | 绕过反爬虫机制 |
 | 可视化 | Plotly | 交互式图表 |
 
@@ -36,7 +37,7 @@
 ├── services/
 │   ├── crawler.py            # 爬虫服务（集成反爬虫）
 │   ├── data_processor.py     # 数据处理服务
-│   └── wechat_anti_crawler.py # 微信反爬虫专用模块
+│   └── wechat_anti_crawler.py # 高级反爬虫模块
 └── utils/
     └── exporters.py          # 导出工具（预留）
 ```
@@ -75,64 +76,92 @@
 | 禁止生成随机账号 | 不生成与输入不符的账号 |
 | 仅返回头条文章 | 统计数据仅包含头条文章 |
 
-## 4. 反爬虫机制
+## 4. 反爬虫机制（高级版）
 
-### 4.1 数据来源
-- **主数据源**：搜狗微信搜索 (https://weixin.sogou.com/)
-- **文章详情**：微信公众平台 (https://mp.weixin.qq.com/)
-
-### 4.2 反爬虫策略
-
-#### UA 伪装
-- 随机 User-Agent 轮换
-- 支持 Chrome、Firefox、Safari 等主流浏览器 UA
-
-#### 请求随机化
-- 请求间隔随机延迟（1-5秒）
-- 随机选择代理 IP（可选）
-- 请求超时自动重试（最多3次）
-
-#### TLS 指纹
-- 使用 requests-session 保持连接
-- 自动处理 Cookie 和重定向
-
-#### 失败处理
-- 状态码 403：等待后重试
-- 状态码 404：账号不存在
-- 网络超时：自动重试
-- 代理失败：自动切换
-
-### 4.3 配置参数
+### 4.1 请求头彻底伪装
 
 ```python
-ANTICRAWLER_CONFIG = {
-    "use_proxy": False,        # 是否使用代理
-    "proxy_list": [],          # 代理 IP 列表
-    "request_delay": 2.0,      # 请求间隔（秒）
-    "max_retries": 3,          # 最大重试次数
-    "timeout": 30,             # 请求超时（秒）
+headers = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36...",
+    "Referer": "https://mp.weixin.qq.com/mp/profile_ext?action=home",
+    "Origin": "https://mp.weixin.qq.com",
+    "Accept-Language": "zh-CN,zh;q=0.9",
 }
 ```
+
+**UA 池**：
+- Chrome 132.0.0.0 (Mac/Windows)
+- Firefox 122.0
+- Safari 17.2
+- Edge 132.0.0.0
+
+### 4.2 浏览器控制
+
+| 配置项 | 值 | 说明 |
+|--------|-----|------|
+| headless | False | 禁用无头模式，使用有头浏览器 |
+| slow_mo | 100ms | 操作延迟，模拟真人速度 |
+| viewport | 1920x1080 | 桌面分辨率 |
+| device_scale_factor | 1.0 | 设备缩放因子 |
+
+### 4.3 频率与行为模拟
+
+| 策略 | 参数 | 说明 |
+|------|------|------|
+| 请求间隔 | 2-5秒随机 | 避免固定频率被检测 |
+| 单日上限 | ≤200篇/账号 | 超出必封 |
+| 预警阈值 | 150篇/日 | 触发双倍延迟 |
+| 禁止并发 | 绝对单线程 | 模拟单用户访问 |
+
+**行为模拟**：
+- 随机滚动（3种强度）
+- 随机鼠标移动
+- 随机点击元素
+- 键盘操作模拟
+- 页面停留时间
+
+### 4.4 字体反爬破解
+
+微信使用自定义 woff 字体文件将阅读量等数字加密：
+
+```
+原始显示: 㐅㐅㐅㐅㐅
+字体映射: 㐅 → 1, 㐆 → 2, ...
+解密结果: 12345
+```
+
+**解析流程**：
+1. 提取 HTML 中的 woff 字体链接
+2. 下载并缓存字体文件
+3. 解析字体映射表
+4. 替换乱码为真实数字
+
+### 4.5 登录态与 Cookie 管理
+
+| 功能 | 说明 |
+|------|------|
+| 二维码登录 | Playwright 控制浏览器扫码 |
+| Cookie 自动管理 | 持久化会话 |
+| Token 刷新 | 定时更新认证信息 |
+| 固定 IP | 绑定设备防止跨 IP |
+
+### 4.6 IP 代理池（可选）
+
+```python
+proxy_list = [
+    "http://user:pass@proxy1.com:8080",
+    "http://user:pass@proxy2.com:8080",
+]
+```
+
+**推荐**：
+- 家庭宽带 IP
+- 纯净住宅 IP
+- 避免机房 IP（必封）
 
 ## 5. 数据模型
 
-### 5.1 Article（文章模型）
-```python
-{
-    "article_id": str,
-    "account_id": str,
-    "account_name": str,
-    "title": str,
-    "publish_time": datetime,
-    "read_count": int,
-    "like_count": int,
-    "comment_count": int,
-    "recommend_count": int,
-    "is_headline": bool  # 是否为头条文章
-}
-```
-
-### 5.2 WechatArticle（微信文章模型）
+### 5.1 WechatArticle（微信文章模型）
 ```python
 {
     "title": str,
@@ -141,13 +170,38 @@ ANTICRAWLER_CONFIG = {
     "account_id": str,
     "publish_time": str,
     "abstract": str,
-    "read_count": int,
-    "like_count": int,
-    "comment_count": int
+    "read_count": int,      # 阅读量
+    "like_count": int,      # 点赞数
+    "comment_count": int,   # 评论数
+    "reward_count": int,    # 在看数
 }
 ```
 
-### 5.3 HeadlineStats（头条统计模型）
+### 5.2 WechatAccount（微信账号模型）
+```python
+{
+    "account_id": str,
+    "account_name": str,
+    "account_nickname": str,
+    "account_intro": str,
+    "logo_url": str,
+    "verify_type": str,
+    "followers": int,
+}
+```
+
+### 5.3 CookieSession（会话模型）
+```python
+{
+    "cookies": Dict[str, str],
+    "token": str,
+    "skey": str,
+    "wap_sid2": str,
+    "expires_at": datetime,
+}
+```
+
+### 5.4 HeadlineStats（头条统计模型）
 ```python
 {
     "account_name": str,
@@ -156,18 +210,7 @@ ANTICRAWLER_CONFIG = {
     "max_reads": int,
     "min_reads": int,
     "article_count": int,
-    "articles": List[Article]
-}
-```
-
-### 5.4 AccountAnalysisResult（分析结果模型）
-```python
-{
-    "account_name": str,
-    "stats": HeadlineStats,
-    "analysis_time": datetime,
-    "scope_type": str,       # "recent_articles" 或 "recent_year"
-    "scope_value": int       # 10 或 年份
+    "articles": List[Article],
 }
 ```
 
@@ -195,19 +238,6 @@ ANTICRAWLER_CONFIG = {
 └────────────────────────────────────────────────┘
 ```
 
-### 6.2 统计卡片
-- 总阅读量：统计范围内所有文章阅读量之和
-- 平均阅读量：总阅读量 / 文章数量
-- 最高阅读量：单篇最高阅读数
-- 最低阅读量：单篇最低阅读数
-
-### 6.3 数据展示标签页
-| 标签页 | 内容 |
-|--------|------|
-| 文章列表 | 每篇文章的标题、发布时间、阅读量 |
-| 数据图表 | 阅读量分布柱状图 + 趋势折线图 |
-| 详细数据 | 完整文章数据表格 |
-
 ## 7. 验收标准
 
 ### 7.1 功能验收
@@ -218,10 +248,16 @@ ANTICRAWLER_CONFIG = {
 - [x] 展示每篇文章的独立阅读量
 
 ### 7.2 反爬虫验收
-- [x] 浏览器 UA 随机伪装
-- [x] 请求间隔随机延迟
-- [x] 失败自动重试机制
-- [x] 代理 IP 支持（可选）
+- [x] Playwright 有头浏览器（禁用 headless）
+- [x] 完整请求头伪装（UA/Referer/Origin）
+- [x] UA 池随机轮换
+- [x] 2-5秒随机请求间隔
+- [x] 禁止并发请求
+- [x] 每日200篇上限
+- [x] 字体 woff 反爬破解
+- [x] 行为模拟（滚动/点击/移动）
+- [x] Cookie 会话管理
+- [x] 代理 IP 支持
 
 ### 7.3 界面验收
 - [x] Streamlit 界面加载正常
@@ -234,7 +270,43 @@ ANTICRAWLER_CONFIG = {
 - [x] 无模糊匹配功能
 - [x] 无随机生成账号（真实爬取失败时回退）
 
-## 8. 后续扩展
+## 8. 配置参数
+
+### 8.1 反爬虫配置
+```python
+ANTICRAWLER_CONFIG = {
+    "use_proxy": False,
+    "proxy_list": [],
+    "request_delay_min": 2.0,
+    "request_delay_max": 5.0,
+    "max_articles_per_day": 200,
+    "daily_limit_warning": 150,
+    "slow_mo": 100,
+    "headless": False,
+}
+```
+
+### 8.2 字体解码配置
+```python
+FONT_DECODER_CONFIG = {
+    "cache_dir": "data/font_cache",
+    "enable_decode": True,
+    "fallback_on_error": True,
+}
+```
+
+### 8.3 行为模拟配置
+```python
+BEHAVIOR_SIMULATOR_CONFIG = {
+    "enable_scroll": True,
+    "enable_click": True,
+    "enable_mouse_move": True,
+    "session_duration_min": 10,
+    "session_duration_max": 60,
+}
+```
+
+## 9. 后续扩展
 
 ### 预留接口
 - [ ] 支持更多代理池服务
@@ -246,3 +318,4 @@ ANTICRAWLER_CONFIG = {
 - [ ] 统计范围可配置
 - [ ] 文章类型可选择（头条/次条/全部）
 - [ ] 代理服务可配置
+- [ ] Cookie 持久化存储

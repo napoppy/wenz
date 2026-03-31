@@ -30,7 +30,8 @@ class CrawlerService:
             from services.wechat_anti_crawler import create_wechat_anti_crawler
             self._anti_crawler = create_wechat_anti_crawler(
                 use_proxy=False,
-                request_delay=2.0
+                headless=False,
+                slow_mo=100
             )
         return self._anti_crawler
 

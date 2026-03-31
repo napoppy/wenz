@@ -28,13 +28,33 @@ EXCEL_COLUMNS = [
 ANTICRAWLER_CONFIG = {
     "use_proxy": False,
     "proxy_list": [],
-    "request_delay": 2.0,
+    "request_delay_min": 2.0,
+    "request_delay_max": 5.0,
     "max_retries": 3,
     "timeout": 30,
+    "max_articles_per_day": 200,
+    "daily_limit_warning": 150,
+    "slow_mo": 100,
+    "headless": False,
     "user_agents": [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0",
     ]
+}
+
+FONT_DECODER_CONFIG = {
+    "cache_dir": "data/font_cache",
+    "enable_decode": True,
+    "fallback_on_error": True,
+}
+
+BEHAVIOR_SIMULATOR_CONFIG = {
+    "enable_scroll": True,
+    "enable_click": True,
+    "enable_mouse_move": True,
+    "session_duration_min": 10,
+    "session_duration_max": 60,
 }
