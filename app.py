@@ -92,7 +92,7 @@ def init_session_state():
 
 
 def run_analysis(account_name: str, scope_type: str, scope_value: int):
-    crawler = create_crawler(platform="wechat", use_mock=True)
+    crawler = create_crawler(platform="wechat", use_mock=False)
     processor = create_processor()
 
     progress_bar = st.progress(0)
