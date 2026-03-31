@@ -1,6 +1,7 @@
-from typing import List, Tuple
+from typing import List, Tuple, Optional
+from datetime import datetime, timedelta
 import numpy as np
-from models.data_models import Account, Article
+from models.data_models import Account, Article, HeadlineStats
 
 
 class DataProcessor:
@@ -53,6 +54,41 @@ class DataProcessor:
         account.calculate_stats()
 
         return account
+
+    @staticmethod
+    def filter_headline_articles_by_recent(articles: List[Article], count: int = 10) -> List[Article]:
+        if not articles:
+            return []
+
+        headline_articles = [a for a in articles if a.is_headline]
+        headline_articles.sort(key=lambda x: x.publish_time, reverse=True)
+
+        return headline_articles[:count]
+
+    @staticmethod
+    def filter_headline_articles_by_year(articles: List[Article], year: int = None) -> List[Article]:
+        if not articles:
+            return []
+
+        if year is None:
+            year = datetime.now().year
+
+        start_date = datetime(year, 1, 1)
+        end_date = datetime(year, 12, 31, 23, 59, 59)
+
+        headline_articles = [
+            a for a in articles
+            if a.is_headline and start_date <= a.publish_time <= end_date
+        ]
+
+        headline_articles.sort(key=lambda x: x.publish_time, reverse=True)
+        return headline_articles
+
+    @staticmethod
+    def calculate_headline_stats(articles: List[Article], account_name: str) -> HeadlineStats:
+        stats = HeadlineStats(account_name=account_name)
+        stats.calculate_from_articles(articles)
+        return stats
 
 
 def create_processor() -> DataProcessor:

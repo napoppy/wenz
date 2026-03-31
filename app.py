@@ -6,47 +6,79 @@ from datetime import datetime
 
 from services.crawler import create_crawler
 from services.data_processor import create_processor
-from services.predictor import create_predictor
-from services.pricing import create_pricing_service
-from utils.exporters import create_exporter
-from models.data_models import AnalysisResult
+from models.data_models import AccountAnalysisResult
 import config
 
 
 st.set_page_config(
-    page_title="智能投放分析系统",
+    page_title="微信公众号精准阅读统计",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2.2rem;
         font-weight: bold;
         color: #1E88E5;
         text-align: center;
-        margin-bottom: 1rem;
+        margin-bottom: 0.5rem;
     }
     .sub-header {
-        font-size: 1.2rem;
+        font-size: 1rem;
         color: #666;
         text-align: center;
         margin-bottom: 2rem;
     }
-    .metric-card {
+    .stat-card {
         background-color: #f8f9fa;
-        padding: 1rem;
+        padding: 1.2rem;
         border-radius: 0.5rem;
         border-left: 4px solid #1E88E5;
+        text-align: center;
     }
-    .stButton>button {
-        width: 100%;
-        background-color: #1E88E5;
-        color: white;
-        padding: 0.75rem 2rem;
-        font-size: 1rem;
+    .stat-label {
+        font-size: 0.9rem;
+        color: #666;
+        margin-bottom: 0.3rem;
+    }
+    .stat-value {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: #1E88E5;
+    }
+    .article-row {
+        padding: 0.8rem;
+        border-bottom: 1px solid #eee;
+    }
+    .article-title {
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 0.3rem;
+    }
+    .article-meta {
+        font-size: 0.85rem;
+        color: #999;
+    }
+    .article-reads {
+        font-size: 1.1rem;
+        font-weight: bold;
+        color: #1E88E5;
+        text-align: right;
+    }
+    .scope-tabs {
+        margin-bottom: 1.5rem;
+    }
+    .no-data {
+        text-align: center;
+        padding: 3rem;
+        color: #999;
+    }
+    .input-section {
+        max-width: 600px;
+        margin: 0 auto 2rem auto;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -55,45 +87,47 @@ st.markdown("""
 def init_session_state():
     if 'analysis_result' not in st.session_state:
         st.session_state.analysis_result = None
-    if 'keyword' not in st.session_state:
-        st.session_state.keyword = ""
+    if 'account_name' not in st.session_state:
+        st.session_state.account_name = ""
 
 
-def run_analysis(keyword: str, price_coefficient: float, platform: str, crawl_limit: int):
-    crawler = create_crawler(platform=platform, use_mock=True)
+def run_analysis(account_name: str, scope_type: str, scope_value: int):
+    crawler = create_crawler(platform="wechat", use_mock=True)
     processor = create_processor()
-    predictor = create_predictor()
-    pricing_service = create_pricing_service(price_coefficient=price_coefficient)
-    exporter = create_exporter()
 
     progress_bar = st.progress(0)
     status_text = st.empty()
 
-    status_text.text("正在搜索匹配账号...")
-    progress_bar.progress(20)
-    accounts = crawler.search_accounts_by_keyword(keyword, limit=crawl_limit)
+    status_text.text("正在查询账号信息...")
+    progress_bar.progress(25)
 
-    status_text.text("正在处理数据...")
-    progress_bar.progress(40)
-    for account in accounts:
-        processor.process_account(account)
+    account = crawler.search_account_by_name(account_name)
 
-    status_text.text("正在预测下一篇文章数据...")
-    progress_bar.progress(60)
-    for account in accounts:
-        predictor.predict_for_account(account)
+    if account is None:
+        return None
 
-    status_text.text("正在计算广告报价...")
-    progress_bar.progress(80)
-    accounts = pricing_service.calculate_for_accounts(accounts)
+    status_text.text("正在筛选头条文章...")
+    progress_bar.progress(50)
 
-    accounts.sort(key=lambda x: x.estimated_read, reverse=True)
+    if scope_type == "recent_articles":
+        filtered_articles = processor.filter_headline_articles_by_recent(
+            account.articles, count=scope_value
+        )
+    else:
+        filtered_articles = processor.filter_headline_articles_by_year(
+            account.articles, year=scope_value
+        )
 
-    result = AnalysisResult(
-        keyword=keyword,
-        accounts=accounts,
-        total_accounts=len(accounts),
-        total_articles=sum(a.article_count for a in accounts)
+    status_text.text("正在计算统计数据...")
+    progress_bar.progress(75)
+
+    stats = processor.calculate_headline_stats(filtered_articles, account_name)
+
+    result = AccountAnalysisResult(
+        account_name=account_name,
+        stats=stats,
+        scope_type=scope_type,
+        scope_value=scope_value
     )
 
     progress_bar.progress(100)
@@ -102,219 +136,246 @@ def run_analysis(keyword: str, price_coefficient: float, platform: str, crawl_li
     return result
 
 
-def display_accounts_table(accounts):
-    df_data = [acc.to_dict() for acc in accounts]
-    df = pd.DataFrame(df_data)
+def display_stats_summary(stats):
+    col1, col2, col3, col4 = st.columns(4)
 
-    df_display = df[[
-        "account_name", "account_field", "avg_read_count",
-        "avg_like_rate", "avg_comment_rate",
-        "estimated_read", "price_standard", "price_min", "price_max"
-    ]].copy()
+    with col1:
+        st.markdown('<div class="stat-card">', unsafe_allow_html=True)
+        st.markdown('<div class="stat-label">总阅读量</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-value">{stats.total_reads:,.0f}</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    df_display.columns = [
-        "账号名称", "领域", "平均阅读", "点赞率(%)",
-        "评论率(%)", "预估阅读", "标准报价", "最低报价", "最高报价"
-    ]
+    with col2:
+        st.markdown('<div class="stat-card">', unsafe_allow_html=True)
+        st.markdown('<div class="stat-label">平均阅读量</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-value">{stats.avg_reads:,.0f}</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    df_display["平均阅读"] = df_display["平均阅读"].apply(lambda x: f"{x:,.0f}")
-    df_display["预估阅读"] = df_display["预估阅读"].apply(lambda x: f"{x:,.0f}")
-    df_display["点赞率(%)"] = df_display["点赞率(%)"].apply(lambda x: f"{x:.2f}")
-    df_display["评论率(%)"] = df_display["评论率(%)"].apply(lambda x: f"{x:.2f}")
-    df_display["标准报价"] = df_display["标准报价"].apply(lambda x: f"¥{x:,.0f}")
-    df_display["最低报价"] = df_display["最低报价"].apply(lambda x: f"¥{x:,.0f}")
-    df_display["最高报价"] = df_display["最高报价"].apply(lambda x: f"¥{x:,.0f}")
+    with col3:
+        st.markdown('<div class="stat-card">', unsafe_allow_html=True)
+        st.markdown('<div class="stat-label">最高阅读量</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-value">{stats.max_reads:,.0f}</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    with col4:
+        st.markdown('<div class="stat-card">', unsafe_allow_html=True)
+        st.markdown('<div class="stat-label">最低阅读量</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="stat-value">{stats.min_reads:,.0f}</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+
+def display_articles_table(articles):
+    if not articles:
+        st.info("暂无文章数据")
+        return
+
+    data = []
+    for i, article in enumerate(articles, 1):
+        data.append({
+            "序号": i,
+            "标题": article.title,
+            "发布时间": article.publish_time.strftime("%Y-%m-%d %H:%M"),
+            "阅读量": f"{article.read_count:,}"
+        })
+
+    df = pd.DataFrame(data)
 
     st.dataframe(
-        df_display,
+        df,
         use_container_width=True,
         hide_index=True
     )
 
-    return df
 
-
-def display_charts(accounts):
-    if not accounts:
+def display_articles_list(articles):
+    if not articles:
+        st.info("暂无文章数据")
         return
 
-    df_data = [acc.to_dict() for acc in accounts[:10]]
-    df = pd.DataFrame(df_data)
+    for article in articles:
+        col1, col2 = st.columns([5, 1])
 
-    tab1, tab2 = st.tabs(["账号对比", "数据分布"])
+        with col1:
+            st.markdown(f"**{article.title}**")
+            st.markdown(f"<span style='color:#999;font-size:0.85rem'>{article.publish_time.strftime('%Y-%m-%d %H:%M')}</span>", unsafe_allow_html=True)
 
-    with tab1:
-        fig = px.bar(
-            df,
-            x="account_name",
-            y=["estimated_read", "avg_read_count"],
-            barmode="group",
-            labels={"value": "阅读量", "account_name": "账号名称", "variable": "数据类型"},
-            title="账号预估阅读量 vs 平均阅读量"
-        )
-        fig.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        with col2:
+            st.markdown(f"<div style='text-align:right;font-size:1.2rem;font-weight:bold;color:#1E88E5'>{article.read_count:,}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:right;font-size:0.75rem;color:#999'>阅读</div>", unsafe_allow_html=True)
 
-    with tab2:
-        fig = px.scatter(
-            df,
-            x="avg_read_count",
-            y="price_standard",
-            size="avg_like_rate",
-            color="account_field",
-            hover_data=["account_name"],
-            labels={
-                "avg_read_count": "平均阅读量",
-                "price_standard": "标准报价",
-                "avg_like_rate": "点赞率",
-                "account_field": "领域"
-            },
-            title="阅读量 vs 报价关系图"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        st.divider()
 
 
-def display_account_detail(accounts):
-    st.subheader("账号详情")
+def display_reads_chart(articles):
+    if not articles:
+        return
 
-    for i, account in enumerate(accounts):
-        with st.expander(f"{account.account_name} ({account.account_field})", expanded=False):
-            col1, col2, col3 = st.columns(3)
+    df = pd.DataFrame([
+        {
+            "序号": i,
+            "标题": a.title[:20] + "..." if len(a.title) > 20 else a.title,
+            "阅读量": a.read_count,
+            "发布时间": a.publish_time.strftime("%Y-%m-%d")
+        }
+        for i, a in enumerate(articles, 1)
+    ])
 
-            with col1:
-                st.metric("预估阅读量", f"{account.estimated_read:,.0f}")
-                st.metric("平均阅读量", f"{account.avg_read_count:,.0f}")
+    fig = px.bar(
+        df,
+        x="序号",
+        y="阅读量",
+        hover_data=["标题", "发布时间"],
+        labels={"序号": "文章序号", "阅读量": "阅读量"},
+        title="近N篇头条文章阅读量分布",
+        text="阅读量"
+    )
 
-            with col2:
-                st.metric("标准报价", f"¥{account.price_standard:,.0f}")
-                st.metric("报价区间", f"¥{account.price_min:,.0f} - ¥{account.price_max:,.0f}")
+    fig.update_traces(textposition="outside")
+    fig.update_layout(
+        xaxis=dict(tickmode="linear"),
+        showlegend=False,
+        height=400
+    )
 
-            with col3:
-                st.metric("文章数量", account.article_count)
-                st.metric("点赞率", f"{account.avg_like_rate * 100:.2f}%")
+    st.plotly_chart(fig, use_container_width=True)
 
-            if account.articles:
-                st.markdown("**最近文章**")
-                articles_df = pd.DataFrame([a.to_dict() for a in account.articles[:5]])
-                articles_df = articles_df[["title", "publish_time", "read_count", "like_count", "comment_count"]]
-                articles_df.columns = ["标题", "发布时间", "阅读量", "点赞", "评论"]
-                st.dataframe(articles_df, use_container_width=True, hide_index=True)
+
+def display_reads_trend(articles):
+    if not articles or len(articles) < 2:
+        return
+
+    sorted_articles = sorted(articles, key=lambda x: x.publish_time)
+
+    df = pd.DataFrame([
+        {
+            "时间": a.publish_time.strftime("%Y-%m-%d"),
+            "阅读量": a.read_count
+        }
+        for a in sorted_articles
+    ])
+
+    fig = px.line(
+        df,
+        x="时间",
+        y="阅读量",
+        markers=True,
+        labels={"阅读量": "阅读量", "时间": "发布时间"},
+        title="阅读量趋势变化"
+    )
+
+    fig.update_layout(height=350, showlegend=False)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def display_empty_state():
+    st.markdown("""
+    <div class="no-data">
+        <h3>📊 微信公众号精准阅读统计</h3>
+        <p>请在上方输入准确的微信公众号名称</p>
+        <p style="font-size:0.9rem;color:#999">
+            系统将自动分析该账号的头条文章阅读数据
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def main():
     init_session_state()
 
-    st.markdown('<p class="main-header">📊 智能投放分析系统</p>', unsafe_allow_html=True)
-    st.markdown('<p class="sub-header">自媒体账号价值评估 + 广告报价自动化工具</p>', unsafe_allow_html=True)
+    st.markdown('<p class="main-header">📊 微信公众号精准阅读统计</p>', unsafe_allow_html=True)
+    st.markdown('<p class="sub-header">输入唯一账号名称，获取精准的头条文章阅读数据分析</p>', unsafe_allow_html=True)
 
-    with st.sidebar:
-        st.header("⚙️ 参数配置")
+    st.divider()
 
-        keyword = st.text_input("关键词", placeholder="输入要搜索的关键词", value=st.session_state.keyword)
+    with st.container():
+        st.markdown("#### 查询条件")
 
-        price_coefficient = st.slider(
-            "单价系数 (元/次阅读)",
-            min_value=float(config.MIN_PRICE_COEFFICIENT),
-            max_value=float(config.MAX_PRICE_COEFFICIENT),
-            value=config.DEFAULT_PRICE_COEFFICIENT,
-            step=0.05,
-            help="0.5-1.0元/次阅读，用于计算广告报价"
-        )
+        col_input, col_scope = st.columns([3, 2])
 
-        platform = st.selectbox(
-            "数据源",
-            options=list(config.PLATFORMS.keys()),
-            format_func=lambda x: config.PLATFORMS[x],
-            index=2
-        )
+        with col_input:
+            account_name = st.text_input(
+                "微信公众号名称",
+                placeholder="请输入准确的账号名称",
+                help="请输入微信公众号的完整名称，系统将精确匹配该账号"
+            )
 
-        crawl_limit = st.number_input(
-            "抓取账号数量",
-            min_value=5,
-            max_value=50,
-            value=config.DEFAULT_CRAWL_LIMIT,
-            step=5
-        )
+        with col_scope:
+            scope_type = st.radio(
+                "统计范围",
+                options=["recent_articles", "recent_year"],
+                format_func=lambda x: "近10篇" if x == "recent_articles" else "近1年",
+                horizontal=True
+            )
 
-        st.divider()
+        analyze_button = st.button("🔍 开始分析", type="primary", use_container_width=True)
 
-        analyze_button = st.button("🚀 开始分析", type="primary")
+    st.divider()
 
-    if analyze_button and keyword:
-        st.session_state.keyword = keyword
+    if analyze_button and account_name:
+        st.session_state.account_name = account_name
 
         with st.spinner("正在分析，请稍候..."):
             try:
+                scope_value = 10 if scope_type == "recent_articles" else datetime.now().year
                 st.session_state.analysis_result = run_analysis(
-                    keyword, price_coefficient, platform, crawl_limit
+                    account_name, scope_type, scope_value
                 )
             except Exception as e:
                 st.error(f"分析过程中出现错误: {str(e)}")
+                st.session_state.analysis_result = None
                 return
 
     if st.session_state.analysis_result:
         result = st.session_state.analysis_result
 
-        st.divider()
+        st.markdown(f"#### 📱 {result.account_name}")
 
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("匹配账号", result.total_accounts)
-        with col2:
-            st.metric("文章总数", result.total_articles)
-        with col3:
-            avg_price = sum(a.price_standard for a in result.accounts) / len(result.accounts) if result.accounts else 0
-            st.metric("平均报价", f"¥{avg_price:,.0f}")
-        with col4:
-            top_read = result.accounts[0].estimated_read if result.accounts else 0
-            st.metric("最高预估阅读", f"{top_read:,.0f}")
+        scope_label = f"近{result.scope_value}篇" if result.scope_type == "recent_articles" else f"{result.scope_value}年"
+        st.caption(f"统计范围: {scope_label} | 文章数量: {result.stats.article_count} 篇 | 分析时间: {result.analysis_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         st.divider()
 
-        st.subheader("📋 账号分析结果")
-        display_accounts_table(result.accounts)
-
-        col_export1, col_export2 = st.columns(2)
-        with col_export1:
-            exporter = create_exporter()
-            if st.button("📥 导出 Excel"):
-                filepath = exporter.export_to_excel(result.accounts, result.keyword)
-                st.success(f"已导出: {filepath}")
-
-        with col_export2:
-            if st.button("📄 导出 CSV"):
-                filepath = exporter.export_to_csv(result.accounts, result.keyword)
-                st.success(f"已导出: {filepath}")
+        display_stats_summary(result.stats)
 
         st.divider()
 
-        st.subheader("📈 数据可视化")
-        display_charts(result.accounts)
+        tab1, tab2, tab3 = st.tabs(["📋 文章列表", "📈 数据图表", "📊 详细数据"])
 
-        st.divider()
+        with tab1:
+            display_articles_list(result.stats.articles)
 
-        display_account_detail(result.accounts)
+        with tab2:
+            display_reads_chart(result.stats.articles)
+            st.divider()
+            display_reads_trend(result.stats.articles)
+
+        with tab3:
+            st.markdown("**头条文章明细数据**")
+            display_articles_table(result.stats.articles)
 
     else:
-        st.info("👈 请在侧边栏输入关键词并点击「开始分析」")
+        if analyze_button and not account_name:
+            st.warning("⚠️ 请输入微信公众号名称")
+        else:
+            display_empty_state()
 
         st.markdown("""
-        ### 使用说明
-
-        1. **输入关键词** - 输入您要搜索的自媒体账号关键词
-        2. **配置参数** - 调整单价系数和其他参数
-        3. **开始分析** - 点击按钮获取分析结果
-        4. **查看报告** - 浏览账号数据、报价和可视化图表
-        5. **导出数据** - 支持 Excel/CSV 格式导出
-
-        ### 核心功能
-
-        - ✅ 根据关键词匹配微信公众号账号
-        - ✅ 采集并分析账号历史文章数据
-        - ✅ 预测下一篇文章的阅读量、点赞量等
-        - ✅ 自动计算广告报价区间
-        - ✅ 支持数据导出和可视化展示
-        """)
+        <div style="margin-top:2rem;padding:1.5rem;background:#f8f9fa;border-radius:0.5rem;">
+            <h4 style="margin-bottom:1rem;">📌 使用说明</h4>
+            <ul style="color:#666;line-height:1.8;">
+                <li>请输入<b>准确的微信公众号名称</b>（如：人民日报、央视新闻）</li>
+                <li>系统将返回该账号的<b>头条文章阅读数据统计</b></li>
+                <li>支持两种统计范围：<b>近10篇</b>或<b>近1年</b>的头条文章</li>
+                <li>统计数据包括：总阅读量、平均阅读量、最高/最低阅读量</li>
+            </ul>
+            <h4 style="margin:1rem 0;">⚠️ 重要提示</h4>
+            <ul style="color:#666;line-height:1.8;">
+                <li>本系统当前使用模拟数据，仅供演示参考</li>
+                <li>查询结果完全匹配输入的账号名称，不返回其他账号</li>
+                <li>不进行模糊搜索，不生成随机账号</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

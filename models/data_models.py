@@ -14,6 +14,7 @@ class Article:
     like_count: int
     comment_count: int
     recommend_count: int
+    is_headline: bool = True
 
     def to_dict(self):
         return {
@@ -25,7 +26,8 @@ class Article:
             "read_count": self.read_count,
             "like_count": self.like_count,
             "comment_count": self.comment_count,
-            "recommend_count": self.recommend_count
+            "recommend_count": self.recommend_count,
+            "is_headline": self.is_headline
         }
 
 
@@ -87,6 +89,56 @@ class Account:
             "price_min": round(self.price_min, 2),
             "price_standard": round(self.price_standard, 2),
             "price_max": round(self.price_max, 2)
+        }
+
+
+@dataclass
+class HeadlineStats:
+    account_name: str
+    total_reads: int = 0
+    avg_reads: float = 0.0
+    max_reads: int = 0
+    min_reads: int = 0
+    article_count: int = 0
+    articles: List[Article] = field(default_factory=list)
+
+    def calculate_from_articles(self, articles: List[Article]):
+        if not articles:
+            return
+
+        self.articles = articles
+        self.article_count = len(articles)
+        self.total_reads = sum(a.read_count for a in articles)
+        self.avg_reads = self.total_reads / self.article_count
+        self.max_reads = max(a.read_count for a in articles)
+        self.min_reads = min(a.read_count for a in articles)
+
+    def to_dict(self):
+        return {
+            "account_name": self.account_name,
+            "total_reads": self.total_reads,
+            "avg_reads": round(self.avg_reads, 2),
+            "max_reads": self.max_reads,
+            "min_reads": self.min_reads,
+            "article_count": self.article_count
+        }
+
+
+@dataclass
+class AccountAnalysisResult:
+    account_name: str
+    stats: HeadlineStats
+    analysis_time: datetime = field(default_factory=datetime.now)
+    scope_type: str = ""
+    scope_value: int = 0
+
+    def to_dict(self):
+        return {
+            "account_name": self.account_name,
+            "stats": self.stats.to_dict(),
+            "analysis_time": self.analysis_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "scope_type": self.scope_type,
+            "scope_value": self.scope_value
         }
 
 
